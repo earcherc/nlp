@@ -11,7 +11,13 @@ import time
 import math
 import pandas as pd
 from pathlib import Path
-from joblib import dump, load
+from joblib import dump
+import matplotlib
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+from datetime import datetime
+
+matplotlib.use("TkAgg")
 
 # find out dimension (shape) of the word embeddings
 # print out the encoding/embedding for sentence - best representation of meaning of text
@@ -27,14 +33,16 @@ from joblib import dump, load
 
 # focus on encoder
 
-
 try:
     DATA_DIR = Path(__file__).resolve().parent / "data"
+    ATTENTION_DIR = Path(__file__).resolve().parent / "attention"
 except NameError:
     DATA_DIR = Path.cwd() / "data"
+    ATTENTION_DIR = Path.cwd() / "attention"
 
-# Ensure the data directory exists
+# Ensure the directories exists
 DATA_DIR.mkdir(exist_ok=True)
+ATTENTION_DIR.mkdir(exist_ok=True)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 LANG1 = "eng"
@@ -160,8 +168,7 @@ class EncoderRNN(nn.Module):
         self.hidden_size = hidden_size
         self.num_layers = num_layers
 
-        print("Input size:", input_size)
-        print("Hidden size:", hidden_size)
+        print("Input size:", input_size, "Hidden size:", hidden_size)
         self.dropout = nn.Dropout(dropout_p)
         self.embedding = nn.Embedding(input_size, hidden_size)
         # Can increase GRU layers
@@ -170,12 +177,9 @@ class EncoderRNN(nn.Module):
         )
 
     def forward(self, input):
-        print("Input shape:", input.shape)
+        print("Input:", input, "Input shape:", input.shape)
         embedded = self.dropout(self.embedding(input))
-        print("Input:", input)
-        print("Embedding shape:", embedded)
-        print("After embedding shape:", embedded.shape)
-        # print("Embedding:", embedded)
+        print("Embedding shape:", embedded.shape)
         output, hidden = self.gru(embedded)
         print("Output shape:", output.shape, "Hidden shape:", hidden.shape)
         return output, hidden
@@ -356,6 +360,8 @@ def train_and_evaluate(
     encoder_optimizer = optim.Adam(encoder.parameters(), lr=learning_rate)
     decoder_optimizer = optim.Adam(decoder.parameters(), lr=learning_rate)
     criterion = nn.NLLLoss()
+    # Select a random sentence pair to visualise the attention weights over training run
+    visualization_pairs = random.sample(pairs, 1)
 
     for epoch in range(1, n_epochs + 1):
         loss = train_epoch(
@@ -366,6 +372,7 @@ def train_and_evaluate(
             decoder_optimizer,
             criterion,
         )
+
         training_log.append((epoch, loss))
 
         print(
@@ -377,6 +384,10 @@ def train_and_evaluate(
                 loss,
             )
         )
+
+        if epoch % 5 == 0:
+            for eng, spa in visualization_pairs:
+                evaluateAndShowAttention(eng)
 
     # Saving the model
     save_model(encoder, decoder, DATA_DIR / "model_checkpoint.tar")
@@ -405,12 +416,46 @@ def evaluate(encoder, decoder, sentence, input_lang, output_lang):
     return decoded_words, decoder_attn
 
 
+def showAttention(input_sentence, output_words, attentions):
+    # Set up figure with colorbar
+    fig, ax = plt.subplots()
+    cax = ax.matshow(attentions, cmap="bone")
+    fig.colorbar(cax)
+
+    # Set up axes
+    ax.set_xticklabels([""] + input_sentence.split(" ") + ["<EOS>"], rotation=90)
+    ax.set_yticklabels([""] + output_words)
+
+    # Show label at every tick
+    ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
+    ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
+
+    # Save the figure to a file
+    timestamp_str = datetime.now().strftime("%I:%M")
+    filename = f"attention_figure_{timestamp_str}.png"
+    filename = filename.replace(":", "-")
+
+    plt.savefig(ATTENTION_DIR / filename)
+
+    # Close the plot to free up memory
+    plt.close(fig)
+
+
 def evaluateAndShowAttention(input_sentence):
     output_words, attentions = evaluate(
         encoder, decoder, input_sentence, input_lang, output_lang
     )
     print("input =", input_sentence)
     print("output =", " ".join(output_words))
+
+    showAttention(
+        input_sentence=input_sentence,
+        output_words=output_words,
+        # Remove the first entry in the attentions tensor,
+        # Then move possible GPU tensor to the CPU (NumPy doesnt handle GPU)
+        # Convert CPU tensor to NumPy array
+        attentions=attentions.squeeze(0).cpu().numpy(),
+    )
 
 
 if __name__ == "__main__":
