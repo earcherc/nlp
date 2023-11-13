@@ -1,37 +1,21 @@
-from __future__ import unicode_literals, print_function, division
-from io import open
 import unicodedata
 import re
 import random
-
 import torch
 import torch.nn as nn
 from torch import optim
 import torch.nn.functional as F
-
-import numpy as np
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler
-
-import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 import numpy as np
 import time
 import math
-
 import pandas as pd
-
 from pathlib import Path
-import os
-import urllib.request
-import zipfile
-
 
 # find out dimension (shape) of the word embeddings
 # print out the encoding/embedding for sentence - best representation of meaning of text
 # use print statement within model class at each layer print the input and output shape, dimensions (shape) of inputs/outputs of each layer
 # use a pytorch command to display summary of the layer shapes
-
-# dont use colab, run locally (just simplify data)
 
 # look at cosine dist between embedding for two setennces (same/similar meaning) and two opposite, two unrelated
 
@@ -42,9 +26,6 @@ import zipfile
 
 # focus on encoder
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-print(device)
 
 try:
     DATA_DIR = Path(__file__).resolve().parent / "data"
@@ -54,15 +35,17 @@ except NameError:
 # Ensure the data directory exists
 DATA_DIR.mkdir(exist_ok=True)
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+LANG1 = "eng"
+LANG2 = "spa"
+BATCH_SIZE = 1
+EPOCHS = 60
+HIDDEN_SIZE = 128
+LEARNING_RATE = 0.001
+MAX_LENGTH = 5
 SOS_token = 0
 EOS_token = 1
-hidden_size = 128
-batch_size = 32
-lang1 = "eng"
-lang2 = "spa"
-
-MAX_LENGTH = 10
-
+PAD_token = 2
 eng_prefixes = (
     "i am ",
     "i m ",
@@ -84,8 +67,8 @@ class Lang:
         self.name = name
         self.word2index = {}
         self.word2count = {}
-        self.index2word = {0: "SOS", 1: "EOS"}
-        self.n_words = 2  # Count SOS and EOS
+        self.index2word = {0: "SOS", 1: "EOS", 2: "PAD"}
+        self.n_words = 3  # Count SOS, EOS and PAD
 
     def addSentence(self, sentence):
         for word in sentence.split(" "):
@@ -117,32 +100,7 @@ def normalizeString(s):
     return s.strip()
 
 
-def download_if_not_exists(url, dest_filepath):
-    if not os.path.exists(dest_filepath):
-        headers = {"User-Agent": "Mozilla/5.0"}
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req) as response, open(
-            dest_filepath, "wb"
-        ) as out_file:
-            data = response.read()  # a `bytes` object
-            out_file.write(data)
-
-
-def readLangs(lang1="eng", lang2="fra", reverse=False):
-    # Define your URLs and file paths
-    url = f"https://www.manythings.org/anki/{lang2}-eng.zip"
-    dest_zip_path = DATA_DIR / f"{lang2}-eng.zip"
-
-    # Download the file if it doesn't exist
-    download_if_not_exists(url, dest_zip_path)
-
-    # Unzipping only the required .txt file
-    with zipfile.ZipFile(dest_zip_path, "r") as zip_ref:
-        for filename in zip_ref.namelist():
-            if filename.endswith(".txt") and lang2 in filename:
-                zip_ref.extract(filename, DATA_DIR)
-
-    # Assume the unzipped file is named f'{lang2}.txt'
+def readLangs(lang1="eng", lang2="spa", reverse=False):
     data_file = DATA_DIR / f"{lang2}.txt"
 
     # Read the data into a DataFrame
@@ -196,17 +154,29 @@ def prepareData(lang1, lang2, reverse=False):
 
 
 class EncoderRNN(nn.Module):
-    def __init__(self, input_size, hidden_size, dropout_p=0.1):
+    def __init__(self, input_size, hidden_size, num_layers=1, dropout_p=0.1):
         super(EncoderRNN, self).__init__()
         self.hidden_size = hidden_size
+        self.num_layers = num_layers
 
-        self.embedding = nn.Embedding(input_size, hidden_size)
-        self.gru = nn.GRU(hidden_size, hidden_size, batch_first=True)
+        print("Input size:", input_size)
+        print("Hidden size:", hidden_size)
         self.dropout = nn.Dropout(dropout_p)
+        self.embedding = nn.Embedding(input_size, hidden_size)
+        # Can increase GRU layers
+        self.gru = nn.GRU(
+            hidden_size, hidden_size, num_layers=num_layers, batch_first=True
+        )
 
     def forward(self, input):
+        print("Input shape:", input.shape)
         embedded = self.dropout(self.embedding(input))
+        print("Input:", input)
+        print("Embedding shape:", embedded)
+        print("After embedding shape:", embedded.shape)
+        # print("Embedding:", embedded)
         output, hidden = self.gru(embedded)
+        print("Output shape:", output.shape, "Hidden shape:", hidden.shape)
         return output, hidden
 
 
@@ -241,7 +211,9 @@ class AttnDecoderRNN(nn.Module):
         decoder_input = torch.empty(
             batch_size, 1, dtype=torch.long, device=device
         ).fill_(SOS_token)
+        print("Decoder input shape:", decoder_input.shape)
         decoder_hidden = encoder_hidden
+        print("Decoder hidden state shape:", decoder_hidden.shape)
         decoder_outputs = []
         attentions = []
 
@@ -318,9 +290,10 @@ def get_dataloader(lang1, lang2, batch_size):
 
     train_sampler = RandomSampler(train_data)
     train_dataloader = DataLoader(
-        train_data, sampler=train_sampler, batch_size=batch_size
+        train_data, sampler=train_sampler, batch_size=batch_size, num_workers=8
     )
-    return input_lang, output_lang, train_dataloader
+
+    return input_lang, output_lang, train_dataloader, pairs
 
 
 def train_epoch(
@@ -339,6 +312,7 @@ def train_epoch(
         loss = criterion(
             decoder_outputs.view(-1, decoder_outputs.size(-1)), target_tensor.view(-1)
         )
+
         loss.backward()
 
         encoder_optimizer.step()
@@ -363,29 +337,50 @@ def timeSince(since, percent):
     return "%s (- %s)" % (asMinutes(s), asMinutes(rs))
 
 
-def showPlot(points):
-    plt.figure()
-    fig, ax = plt.subplots()
-    # this locator puts ticks at regular intervals
-    loc = ticker.MultipleLocator(base=0.2)
-    ax.yaxis.set_major_locator(loc)
-    plt.plot(points)
+def save_model(encoder, decoder, path):
+    torch.save(
+        {
+            "encoder_state_dict": encoder.state_dict(),
+            "decoder_state_dict": decoder.state_dict(),
+        },
+        path,
+    )
 
 
-def train(
-    train_dataloader,
-    encoder,
-    decoder,
-    n_epochs,
-    learning_rate=0.001,
-    print_every=100,
-    plot_every=100,
+def get_sentence_embedding(encoder, input_lang, sentence, max_length):
+    normalized_sentence = normalizeString(sentence)
+
+    # Convert each word to its index, with padding for out-of-vocabulary words
+    tokens = [
+        input_lang.word2index.get(word, input_lang.word2index["PAD"])
+        for word in normalized_sentence.split(" ")
+    ]
+
+    # Ensure the sentence does not exceed the max length and pad if necessary
+    if len(tokens) < max_length:
+        tokens.extend([input_lang.word2index["PAD"]] * (max_length - len(tokens)))
+    else:
+        tokens = tokens[:max_length]
+
+    # Add the EOS token
+    tokens.append(input_lang.word2index["EOS"])
+
+    # Create sentence tensor and add batch dimension
+    sentence_tensor = torch.tensor(tokens, dtype=torch.long).unsqueeze(0).to(device)
+
+    # Get the encoder outputs
+    with torch.no_grad():
+        _, sentence_embedding = encoder(sentence_tensor)
+
+    # Only take the embedding from the final layer
+    return sentence_embedding.squeeze(0)
+
+
+def train_and_evaluate(
+    train_dataloader, encoder, decoder, pairs, n_epochs, learning_rate=0.001
 ):
     start = time.time()
-    plot_losses = []
-    print_loss_total = 0  # Reset every print_every
-    plot_loss_total = 0  # Reset every plot_every
-
+    training_log = []
     encoder_optimizer = optim.Adam(encoder.parameters(), lr=learning_rate)
     decoder_optimizer = optim.Adam(decoder.parameters(), lr=learning_rate)
     criterion = nn.NLLLoss()
@@ -399,28 +394,51 @@ def train(
             decoder_optimizer,
             criterion,
         )
-        print_loss_total += loss
-        plot_loss_total += loss
+        training_log.append((epoch, loss))
 
-        if epoch % print_every == 0:
-            print_loss_avg = print_loss_total / print_every
-            print_loss_total = 0
-            print(
-                "%s (%d %d%%) %.4f"
-                % (
-                    timeSince(start, epoch / n_epochs),
-                    epoch,
-                    epoch / n_epochs * 100,
-                    print_loss_avg,
-                )
+        print(
+            "%s (Epoch %d, %d%%) Loss: %.4f"
+            % (
+                timeSince(start, epoch / n_epochs),
+                epoch,
+                epoch / n_epochs * 100,
+                loss,
             )
+        )
 
-        if epoch % plot_every == 0:
-            plot_loss_avg = plot_loss_total / plot_every
-            plot_losses.append(plot_loss_avg)
-            plot_loss_total = 0
+    print("\nTraining Log:")
+    for log_entry in training_log:
+        print(f"Epoch {log_entry[0]}: Loss {log_entry[1]:.4f}")
 
-    showPlot(plot_losses)
+    # Saving the model
+    save_model(encoder, decoder, DATA_DIR / "model_checkpoint.tar")
+
+    # Inference tests
+    print("\nInference Tests:")
+    for _ in range(5):
+        pair = random.choice(pairs)
+        evaluateAndShowAttention(pair[0])
+
+    # Cosine similarity tests
+    print("\nCosine Similarity Tests:")
+    sentence_pairs = [
+        ("How are you today?", "How's it going today?"),
+        ("It is incredibly hot outside.", "It's really cold out there."),
+        (
+            "The cat sat on the mat.",
+            "Soccer games are usually played on a field.",
+        ),
+    ]
+
+    for sent1, sent2 in sentence_pairs:
+        embedding1 = get_sentence_embedding(encoder, input_lang, sent1, MAX_LENGTH)
+        embedding2 = get_sentence_embedding(encoder, input_lang, sent2, MAX_LENGTH)
+        cosine_sim = F.cosine_similarity(embedding1, embedding2, dim=0)
+        print(
+            f"Cosine similarity between embeddings of:\n'{sent1}'\nand\n'{sent2}': {cosine_sim.item():.4f}"
+        )
+
+    return training_log
 
 
 def evaluate(encoder, decoder, sentence, input_lang, output_lang):
@@ -444,59 +462,31 @@ def evaluate(encoder, decoder, sentence, input_lang, output_lang):
     return decoded_words, decoder_attn
 
 
-def evaluateRandomly(encoder, decoder, n=10):
-    for i in range(n):
-        pair = random.choice(pairs)
-        print(">", pair[0])
-        print("=", pair[1])
-        output_words, _ = evaluate(encoder, decoder, pair[0], input_lang, output_lang)
-        output_sentence = " ".join(output_words)
-        print("<", output_sentence)
-        print("")
-
-
-def showAttention(input_sentence, output_words, attentions):
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    cax = ax.matshow(attentions.cpu().numpy(), cmap="bone")
-    fig.colorbar(cax)
-
-    # Set up axes
-    ax.set_xticklabels([""] + input_sentence.split(" ") + ["<EOS>"], rotation=90)
-    ax.set_yticklabels([""] + output_words)
-
-    # Show label at every tick
-    ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
-    ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
-
-    plt.show()
-
-
 def evaluateAndShowAttention(input_sentence):
     output_words, attentions = evaluate(
         encoder, decoder, input_sentence, input_lang, output_lang
     )
     print("input =", input_sentence)
     print("output =", " ".join(output_words))
-    showAttention(input_sentence, output_words, attentions[0, : len(output_words), :])
 
 
 if __name__ == "__main__":
-    input_lang, output_lang, train_dataloader = get_dataloader(lang1, lang2, batch_size)
+    input_lang, output_lang, train_dataloader, pairs = get_dataloader(
+        LANG1, LANG2, BATCH_SIZE
+    )
 
-    encoder = EncoderRNN(input_lang.n_words, hidden_size).to(device)
-    decoder = AttnDecoderRNN(hidden_size, output_lang.n_words).to(device)
+    encoder = EncoderRNN(input_lang.n_words, HIDDEN_SIZE, num_layers=1).to(device)
+    decoder = AttnDecoderRNN(HIDDEN_SIZE, output_lang.n_words).to(device)
 
-    train(train_dataloader, encoder, decoder, 80, print_every=5, plot_every=5)
+    print(encoder)
+    print(decoder)
 
-    encoder.eval()
-    decoder.eval()
-    # evaluateRandomly(encoder, decoder)
+    training_log = train_and_evaluate(
+        train_dataloader, encoder, decoder, pairs, EPOCHS, learning_rate=LEARNING_RATE
+    )
 
-    # evaluateAndShowAttention('il n est pas aussi grand que son pere')
-
-    # evaluateAndShowAttention('je suis trop fatigue pour conduire')
-
-    # evaluateAndShowAttention('je suis desole si c est une question idiote')
-
-    # evaluateAndShowAttention('je suis reellement fiere de vous')
+# Function that does translation
+# Learn about what BLEU is and implement it - edits/updates/deletion
+# Save/load and prediction with joblib
+# New script that loads this
+# Understand the loss functions - log loss?
