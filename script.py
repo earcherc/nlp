@@ -17,7 +17,8 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 from datetime import datetime
 
-matplotlib.use("TkAgg")
+# Set a non-interactive backend
+matplotlib.use("Agg")
 
 # find out dimension (shape) of the word embeddings
 # print out the encoding/embedding for sentence - best representation of meaning of text
@@ -385,7 +386,7 @@ def train_and_evaluate(
             )
         )
 
-        if epoch % 5 == 0:
+        if epoch % 2 == 0:
             for eng, spa in visualization_pairs:
                 evaluateAndShowAttention(eng)
 
@@ -423,7 +424,13 @@ def showAttention(input_sentence, output_words, attentions):
     fig.colorbar(cax)
 
     # Set up axes
+    # Set the locations of the x-ticks
+    ax.set_xticks(range(len([""] + input_sentence.split(" ") + ["<EOS>"])))
+    # Then set the labels with a FixedFormatter
     ax.set_xticklabels([""] + input_sentence.split(" ") + ["<EOS>"], rotation=90)
+
+    # Do the same for y-ticks
+    ax.set_yticks(range(len([""] + output_words)))
     ax.set_yticklabels([""] + output_words)
 
     # Show label at every tick
