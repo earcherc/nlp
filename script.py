@@ -11,6 +11,7 @@ import time
 import math
 import pandas as pd
 from pathlib import Path
+from joblib import dump, load
 
 # find out dimension (shape) of the word embeddings
 # print out the encoding/embedding for sentence - best representation of meaning of text
@@ -338,42 +339,13 @@ def timeSince(since, percent):
 
 
 def save_model(encoder, decoder, path):
-    torch.save(
+    dump(
         {
             "encoder_state_dict": encoder.state_dict(),
             "decoder_state_dict": decoder.state_dict(),
         },
         path,
     )
-
-
-def get_sentence_embedding(encoder, input_lang, sentence, max_length):
-    normalized_sentence = normalizeString(sentence)
-
-    # Convert each word to its index, with padding for out-of-vocabulary words
-    tokens = [
-        input_lang.word2index.get(word, input_lang.word2index["PAD"])
-        for word in normalized_sentence.split(" ")
-    ]
-
-    # Ensure the sentence does not exceed the max length and pad if necessary
-    if len(tokens) < max_length:
-        tokens.extend([input_lang.word2index["PAD"]] * (max_length - len(tokens)))
-    else:
-        tokens = tokens[:max_length]
-
-    # Add the EOS token
-    tokens.append(input_lang.word2index["EOS"])
-
-    # Create sentence tensor and add batch dimension
-    sentence_tensor = torch.tensor(tokens, dtype=torch.long).unsqueeze(0).to(device)
-
-    # Get the encoder outputs
-    with torch.no_grad():
-        _, sentence_embedding = encoder(sentence_tensor)
-
-    # Only take the embedding from the final layer
-    return sentence_embedding.squeeze(0)
 
 
 def train_and_evaluate(
@@ -406,37 +378,8 @@ def train_and_evaluate(
             )
         )
 
-    print("\nTraining Log:")
-    for log_entry in training_log:
-        print(f"Epoch {log_entry[0]}: Loss {log_entry[1]:.4f}")
-
     # Saving the model
     save_model(encoder, decoder, DATA_DIR / "model_checkpoint.tar")
-
-    # Inference tests
-    print("\nInference Tests:")
-    for _ in range(5):
-        pair = random.choice(pairs)
-        evaluateAndShowAttention(pair[0])
-
-    # Cosine similarity tests
-    print("\nCosine Similarity Tests:")
-    sentence_pairs = [
-        ("How are you today?", "How's it going today?"),
-        ("It is incredibly hot outside.", "It's really cold out there."),
-        (
-            "The cat sat on the mat.",
-            "Soccer games are usually played on a field.",
-        ),
-    ]
-
-    for sent1, sent2 in sentence_pairs:
-        embedding1 = get_sentence_embedding(encoder, input_lang, sent1, MAX_LENGTH)
-        embedding2 = get_sentence_embedding(encoder, input_lang, sent2, MAX_LENGTH)
-        cosine_sim = F.cosine_similarity(embedding1, embedding2, dim=0)
-        print(
-            f"Cosine similarity between embeddings of:\n'{sent1}'\nand\n'{sent2}': {cosine_sim.item():.4f}"
-        )
 
     return training_log
 
@@ -484,6 +427,10 @@ if __name__ == "__main__":
     training_log = train_and_evaluate(
         train_dataloader, encoder, decoder, pairs, EPOCHS, learning_rate=LEARNING_RATE
     )
+
+    print("\nTraining Log:")
+    for log_entry in training_log:
+        print(f"Epoch {log_entry[0]}: Loss {log_entry[1]:.4f}")
 
 # Function that does translation
 # Learn about what BLEU is and implement it - edits/updates/deletion
