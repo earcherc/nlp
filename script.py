@@ -37,19 +37,22 @@ matplotlib.use("Agg")
 try:
     DATA_DIR = Path(__file__).resolve().parent / "data"
     ATTENTION_DIR = Path(__file__).resolve().parent / "attention"
+    LOSS_DIR = Path(__file__).resolve().parent / "loss"
 except NameError:
     DATA_DIR = Path.cwd() / "data"
     ATTENTION_DIR = Path.cwd() / "attention"
+    LOSS_DIR = Path.cwd() / "loss"
 
 # Ensure the directories exists
 DATA_DIR.mkdir(exist_ok=True)
 ATTENTION_DIR.mkdir(exist_ok=True)
+LOSS_DIR.mkdir(exist_ok=True)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 LANG1 = "eng"
 LANG2 = "spa"
-BATCH_SIZE = 1
-EPOCHS = 60
+BATCH_SIZE = 32
+EPOCHS = 30
 HIDDEN_SIZE = 128
 LEARNING_RATE = 0.001
 MAX_LENGTH = 5
@@ -442,6 +445,7 @@ def showAttention(input_sentence, output_words, attentions):
     filename = f"attention_figure_{timestamp_str}.png"
     filename = filename.replace(":", "-")
 
+    print("Saving attention plot...")
     plt.savefig(ATTENTION_DIR / filename)
 
     # Close the plot to free up memory
@@ -465,6 +469,23 @@ def evaluateAndShowAttention(input_sentence):
     )
 
 
+def plot_loss(training_log):
+    # Extract epochs and loss values
+    epochs, losses = zip(*training_log)
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(epochs, losses, label="Training Loss")
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.title("Training Loss Over Time")
+    plt.legend()
+    plt.grid(True)
+
+    print("\n Saving training log plot...")
+    plt.savefig(LOSS_DIR / "training_loss.png")
+    plt.close()  # Close the plot to free up memory
+
+
 if __name__ == "__main__":
     input_lang, output_lang, train_dataloader, pairs = get_dataloader(
         LANG1, LANG2, BATCH_SIZE
@@ -473,6 +494,14 @@ if __name__ == "__main__":
     encoder = EncoderRNN(input_lang.n_words, HIDDEN_SIZE, num_layers=1).to(device)
     decoder = AttnDecoderRNN(HIDDEN_SIZE, output_lang.n_words).to(device)
 
+    encoder_params = sum(p.numel() for p in encoder.parameters() if p.requires_grad)
+    decoder_params = sum(p.numel() for p in decoder.parameters() if p.requires_grad)
+    total_params = encoder_params + decoder_params
+
+    print(f"Encoder has {encoder_params} parameters")
+    print(f"Decoder has {decoder_params} parameters")
+    print(f"The whole model has {total_params} parameters")
+
     print(encoder)
     print(decoder)
 
@@ -480,9 +509,7 @@ if __name__ == "__main__":
         train_dataloader, encoder, decoder, pairs, EPOCHS, learning_rate=LEARNING_RATE
     )
 
-    print("\nTraining Log:")
-    for log_entry in training_log:
-        print(f"Epoch {log_entry[0]}: Loss {log_entry[1]:.4f}")
+    plot_loss(training_log)
 
 # Function that does translation
 # Learn about what BLEU is and implement it - edits/updates/deletion
