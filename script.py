@@ -51,11 +51,13 @@ LOSS_DIR.mkdir(exist_ok=True)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 LANG1 = "eng"
 LANG2 = "spa"
-BATCH_SIZE = 32
+BATCH_SIZE = 64
 EPOCHS = 30
 HIDDEN_SIZE = 128
 LEARNING_RATE = 0.001
-MAX_LENGTH = 5
+MAX_LENGTH = 8
+DROPOUT_P = 0.01
+NUM_GRU_LAYERS = 1
 SOS_token = 0
 EOS_token = 1
 PAD_token = 2
@@ -167,17 +169,23 @@ def prepareData(lang1, lang2, reverse=False):
 
 
 class EncoderRNN(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers=1, dropout_p=0.1):
+    def __init__(
+        self,
+        input_size,
+        hidden_size,
+        num_gru_layers=NUM_GRU_LAYERS,
+        dropout_p=DROPOUT_P,
+    ):
         super(EncoderRNN, self).__init__()
         self.hidden_size = hidden_size
-        self.num_layers = num_layers
+        self.num_gru_layers = num_gru_layers
 
         print("Input size:", input_size, "Hidden size:", hidden_size)
         self.dropout = nn.Dropout(dropout_p)
         self.embedding = nn.Embedding(input_size, hidden_size)
         # Can increase GRU layers
         self.gru = nn.GRU(
-            hidden_size, hidden_size, num_layers=num_layers, batch_first=True
+            hidden_size, hidden_size, num_layers=num_gru_layers, batch_first=True
         )
 
     def forward(self, input):
@@ -207,7 +215,7 @@ class BahdanauAttention(nn.Module):
 
 
 class AttnDecoderRNN(nn.Module):
-    def __init__(self, hidden_size, output_size, dropout_p=0.1):
+    def __init__(self, hidden_size, output_size, dropout_p=DROPOUT_P):
         super(AttnDecoderRNN, self).__init__()
         self.embedding = nn.Embedding(output_size, hidden_size)
         self.attention = BahdanauAttention(hidden_size)
@@ -346,14 +354,15 @@ def timeSince(since, percent):
     return "%s (- %s)" % (asMinutes(s), asMinutes(rs))
 
 
-def save_model(encoder, decoder, path):
-    dump(
-        {
-            "encoder_state_dict": encoder.state_dict(),
-            "decoder_state_dict": decoder.state_dict(),
-        },
-        path,
-    )
+def save_model(encoder, decoder, input_lang, output_lang, hyperparameters, path):
+    model_data = {
+        "encoder_state_dict": encoder.state_dict(),
+        "decoder_state_dict": decoder.state_dict(),
+        "input_lang": input_lang,
+        "output_lang": output_lang,
+        "hyperparameters": hyperparameters,
+    }
+    dump(model_data, path)
 
 
 def train_and_evaluate(
@@ -393,8 +402,23 @@ def train_and_evaluate(
             for eng, spa in visualization_pairs:
                 evaluateAndShowAttention(eng)
 
+    hyperparameters = {
+        "input_size": input_lang.n_words,
+        "output_size": output_lang.n_words,
+        "hidden_size": HIDDEN_SIZE,
+        "num_gru_layers": NUM_GRU_LAYERS,
+        "dropout_p": DROPOUT_P,
+    }
+
     # Saving the model
-    save_model(encoder, decoder, DATA_DIR / "model_checkpoint.tar")
+    save_model(
+        encoder,
+        decoder,
+        input_lang,
+        output_lang,
+        hyperparameters,
+        DATA_DIR / "model_checkpoint.joblib",
+    )
 
     return training_log
 
@@ -491,7 +515,9 @@ if __name__ == "__main__":
         LANG1, LANG2, BATCH_SIZE
     )
 
-    encoder = EncoderRNN(input_lang.n_words, HIDDEN_SIZE, num_layers=1).to(device)
+    encoder = EncoderRNN(
+        input_lang.n_words, HIDDEN_SIZE, num_gru_layers=NUM_GRU_LAYERS
+    ).to(device)
     decoder = AttnDecoderRNN(HIDDEN_SIZE, output_lang.n_words).to(device)
 
     encoder_params = sum(p.numel() for p in encoder.parameters() if p.requires_grad)

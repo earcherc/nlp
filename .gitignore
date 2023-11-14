@@ -2,3 +2,4 @@
 .DS_Store
 /attention
 /loss
+__pycache__
