@@ -58,6 +58,7 @@ LEARNING_RATE = 0.001
 MAX_LENGTH = 8
 DROPOUT_P = 0.01
 NUM_GRU_LAYERS = 1
+REVERSE = False
 SOS_token = 0
 EOS_token = 1
 PAD_token = 2
@@ -115,7 +116,7 @@ def normalizeString(s):
     return s.strip()
 
 
-def readLangs(lang1=LANG1, lang2=LANG2, reverse=False):
+def readLangs(lang1=LANG1, lang2=LANG2, reverse=REVERSE):
     data_file = DATA_DIR / f"{lang2}.txt"
 
     # Read the data into a DataFrame
@@ -140,19 +141,30 @@ def readLangs(lang1=LANG1, lang2=LANG2, reverse=False):
     return input_lang, output_lang, pairs
 
 
-def filterPair(p):
-    return (
-        len(p[0].split(" ")) < MAX_LENGTH
-        and len(p[1].split(" ")) < MAX_LENGTH
-        and p[1].startswith(eng_prefixes)
-    )
+def filterPair(p, reverse=REVERSE):
+    if reverse:
+        # When reversed, p[0] is Spanish and p[1] is English.
+        # Apply prefix filter to p[1] (English) and length filter to both.
+        return (
+            len(p[0].split(" ")) < MAX_LENGTH
+            and len(p[1].split(" ")) < MAX_LENGTH
+            and p[1].startswith(eng_prefixes)
+        )
+    else:
+        # When not reversed, p[0] is English and p[1] is Spanish.
+        # Apply prefix filter to p[0] (English) and length filter to both.
+        return (
+            len(p[0].split(" ")) < MAX_LENGTH
+            and len(p[1].split(" ")) < MAX_LENGTH
+            and p[0].startswith(eng_prefixes)
+        )
 
 
 def filterPairs(pairs):
     return [pair for pair in pairs if filterPair(pair)]
 
 
-def prepareData(lang1, lang2, reverse=False):
+def prepareData(lang1, lang2, reverse=REVERSE):
     input_lang, output_lang, pairs = readLangs(lang1, lang2, reverse)
 
     print("Read %s sentence pairs" % len(pairs))
@@ -287,7 +299,7 @@ def tensorsFromPair(pair):
 
 
 def get_dataloader(lang1, lang2, batch_size):
-    input_lang, output_lang, pairs = prepareData(lang1, lang2, False)
+    input_lang, output_lang, pairs = prepareData(lang1, lang2)
 
     n = len(pairs)
     input_ids = np.zeros((n, MAX_LENGTH), dtype=np.int32)
