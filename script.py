@@ -52,16 +52,15 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 LANG1 = "eng"
 LANG2 = "spa"
 BATCH_SIZE = 64
-EPOCHS = 30
+EPOCHS = 80
 HIDDEN_SIZE = 128
 LEARNING_RATE = 0.001
-MAX_LENGTH = 8
+MAX_LENGTH = 5
 DROPOUT_P = 0.01
 NUM_GRU_LAYERS = 1
 REVERSE = False
 SOS_token = 0
 EOS_token = 1
-PAD_token = 2
 eng_prefixes = (
     "i am ",
     "i m ",
@@ -83,8 +82,8 @@ class Lang:
         self.name = name
         self.word2index = {}
         self.word2count = {}
-        self.index2word = {0: "SOS", 1: "EOS", 2: "PAD"}
-        self.n_words = 3  # Count SOS, EOS and PAD
+        self.index2word = {0: "SOS", 1: "EOS"}
+        self.n_words = 2  # Count SOS, EOS
 
     def addSentence(self, sentence):
         for word in sentence.split(" "):
@@ -289,7 +288,8 @@ def indexesFromSentence(lang, sentence):
 def tensorFromSentence(lang, sentence):
     indexes = indexesFromSentence(lang, sentence)
     indexes.append(EOS_token)
-    return torch.tensor(indexes, dtype=torch.long, device=device).view(1, -1)
+    tensor = torch.tensor(indexes, dtype=torch.long, device=device).view(1, -1)
+    return tensor
 
 
 def tensorsFromPair(pair):

@@ -64,11 +64,9 @@ def translate(encoder, decoder, input_lang, output_lang, sentence):
         if word not in input_lang.word2index:
             print(f"Warning: '{word}' not in vocabulary.")
 
-    with torch.no_grad():  # No need to track history in inference mode
-        input_tensor = tensorFromSentence(input_lang, sentence)
-        input_tensor = input_tensor.to(device)
+    with torch.no_grad():
         output_words, attentions = evaluate(
-            encoder, decoder, input_tensor, input_lang, output_lang
+            encoder, decoder, sentence, input_lang, output_lang
         )
         return " ".join(output_words)
 
