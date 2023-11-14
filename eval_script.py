@@ -1,4 +1,4 @@
-# eval_model.py
+# eval_script.py
 import torch
 from joblib import load
 import argparse
@@ -12,6 +12,8 @@ from script import (
 )
 from pathlib import Path
 import sys
+import traceback
+
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 
@@ -57,8 +59,11 @@ def load_model(file_name):
     return encoder, decoder, input_lang, output_lang
 
 
-# Function to translate a sentence
 def translate(encoder, decoder, input_lang, output_lang, sentence):
+    for word in sentence.split():
+        if word not in input_lang.word2index:
+            print(f"Warning: '{word}' not in vocabulary.")
+
     with torch.no_grad():  # No need to track history in inference mode
         input_tensor = tensorFromSentence(input_lang, sentence)
         input_tensor = input_tensor.to(device)
@@ -98,3 +103,4 @@ if __name__ == "__main__":
         print(f"Translated sentence: {translation}")
     except Exception as e:
         print(f"Error during translation: {e}")
+        traceback.print_exc()

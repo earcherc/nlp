@@ -115,7 +115,7 @@ def normalizeString(s):
     return s.strip()
 
 
-def readLangs(lang1="eng", lang2="spa", reverse=False):
+def readLangs(lang1=LANG1, lang2=LANG2, reverse=False):
     data_file = DATA_DIR / f"{lang2}.txt"
 
     # Read the data into a DataFrame
@@ -287,7 +287,7 @@ def tensorsFromPair(pair):
 
 
 def get_dataloader(lang1, lang2, batch_size):
-    input_lang, output_lang, pairs = prepareData(lang1, lang2, True)
+    input_lang, output_lang, pairs = prepareData(lang1, lang2, False)
 
     n = len(pairs)
     input_ids = np.zeros((n, MAX_LENGTH), dtype=np.int32)
@@ -366,7 +366,12 @@ def save_model(encoder, decoder, input_lang, output_lang, hyperparameters, path)
 
 
 def train_and_evaluate(
-    train_dataloader, encoder, decoder, pairs, n_epochs, learning_rate=0.001
+    train_dataloader,
+    encoder,
+    decoder,
+    pairs,
+    n_epochs,
+    learning_rate=0.001,
 ):
     start = time.time()
     training_log = []
@@ -511,6 +516,7 @@ def plot_loss(training_log):
 
 
 if __name__ == "__main__":
+    # These are in global namespace
     input_lang, output_lang, train_dataloader, pairs = get_dataloader(
         LANG1, LANG2, BATCH_SIZE
     )
@@ -532,7 +538,12 @@ if __name__ == "__main__":
     print(decoder)
 
     training_log = train_and_evaluate(
-        train_dataloader, encoder, decoder, pairs, EPOCHS, learning_rate=LEARNING_RATE
+        train_dataloader,
+        encoder,
+        decoder,
+        pairs,
+        EPOCHS,
+        learning_rate=LEARNING_RATE,
     )
 
     plot_loss(training_log)
