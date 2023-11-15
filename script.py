@@ -51,11 +51,11 @@ LOSS_DIR.mkdir(exist_ok=True)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 LANG1 = "eng"
 LANG2 = "spa"
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 EPOCHS = 80
 HIDDEN_SIZE = 128
 LEARNING_RATE = 0.001
-MAX_LENGTH = 5
+MAX_LENGTH = 8
 DROPOUT_P = 0.01
 NUM_GRU_LAYERS = 1
 REVERSE = False
@@ -565,3 +565,8 @@ if __name__ == "__main__":
 # Save/load and prediction with joblib
 # New script that loads this
 # Understand the loss functions - log loss?
+
+# Split dataset into test/validation
+# Plot along
+# Create a hyperparameter table
+# Most important for final report
